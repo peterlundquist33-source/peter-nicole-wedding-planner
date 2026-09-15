@@ -93,9 +93,31 @@
     <section id="teardown"><div class="section-head"><div><span class="tag">End of night</span><h2>Teardown & bring home</h2></div></div><div class="grid"><article class="card"><h3>Welcome + bar</h3><ul class="checklist"><li>Guest book, cards, pens, pen cup</li><li>Matches, bowl, signage, mirror</li><li>Seating chart sign</li><li>Pink lamps and green velvet linens</li></ul></article><article class="card"><h3>Dinner room</h3><ul class="checklist"><li>Pack Après plates, glasses, flatware in provided crates</li><li>Dump sand into buckets; pack hurricanes</li><li>Return bud vases to florist</li><li>Bag all Après dinner linens separately</li></ul></article><article class="card"><h3>Final sweep</h3><ul class="checklist"><li>Extra menus</li><li>Green velvet head-table linens</li><li>Confirm all personal décor is back in original bins</li><li>Vacate venue by midnight</li></ul></article></div></section>
   </main>
   <footer class="footer"><div class="shell">Peter & Nicole · Wedding command center · Draft generated from “Wedding Binder Docs”</div></footer>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.14.1/firebase-app-compat.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.14.1/firebase-firestore-compat.min.js"></script>
+  <script>
+    /* Same Firebase project as Rizzlers Pick'ems. These are public identifiers, not secrets;
+       firestore.rules in this repo is what constrains writes. */
+    window.FIREBASE_CONFIG = {
+      apiKey: "AIzaSyCtUp7DYEjdE5i_Vt9oTqzpmNAgHP32xy8",
+      authDomain: "rizzlers-pickems.firebaseapp.com",
+      projectId: "rizzlers-pickems",
+      storageBucket: "rizzlers-pickems.firebasestorage.app",
+      messagingSenderId: "401907218298",
+      appId: "1:401907218298:web:795ef076067ee1926b88c3"
+    };
+  </script>
   <script>
     document.querySelectorAll('.tabs button').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));button.classList.add('active');document.getElementById(button.dataset.tab).classList.add('active')}));
-    document.querySelectorAll('.open-item input').forEach((box,i)=>{box.checked=localStorage.getItem('wedding-open-'+i)==='true';box.addEventListener('change',()=>localStorage.setItem('wedding-open-'+i,box.checked))});
+    // Shared to-do list: one Firestore collection ("todos") that every phone reads live.
+    // If Firebase can't load, everything below falls back to this-browser-only localStorage.
+    let db=null;try{if(window.firebase&&window.FIREBASE_CONFIG){firebase.initializeApp(window.FIREBASE_CONFIG);db=firebase.firestore()}}catch(error){db=null}
+    const builtinBoxes=[...document.querySelectorAll('.open-item input')];
+    const builtinText=box=>box.closest('.open-item').querySelector('b').textContent.trim();
+    const whoAmI=()=>{let n=localStorage.getItem('wedding-who');if(!n){n=(prompt('Who is this? (Peter or Nicole)','')||'').trim();if(n)localStorage.setItem('wedding-who',n)}return n};
+    const todoDoc=id=>db.doc('todos/'+id);
+    if(db)builtinBoxes.forEach((box,i)=>box.addEventListener('change',()=>todoDoc('builtin-'+i).set({text:builtinText(box),done:box.checked,by:whoAmI(),updated:Date.now()},{merge:true}).catch(()=>{box.checked=!box.checked})));
+    else builtinBoxes.forEach((box,i)=>{box.checked=localStorage.getItem('wedding-open-'+i)==='true';box.addEventListener('change',()=>localStorage.setItem('wedding-open-'+i,box.checked))});
     const currency=value=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(value||0);
     const vendors=['Lefebvre Catering','Blue Water Kings Band','Urban Daisy Venue','Blend by Natalie — Makeup','Hair by Kelsey','Après Rentals','Green Goddess Floral','Sarah Ascanio Photography','Love Infinity Films','Party Bus / Transportation','Wedding Dress','Dress Alterations','HoneyB Day-of Coordinator','Bar','Bridesmaid Gifts','Groomsman Gifts','Time Into Pixels','Invitations','Suits','Honeymoon','Parlour Bar','Other','Tips','Church Rental'];
     const payers=['','Peter','Nicole and Peter','Sue / Erik','Craig and Jeanne','Shared','Other'];
@@ -108,10 +130,18 @@
     let customOpenItems=[];
     try{customOpenItems=JSON.parse(localStorage.getItem(customOpenKey)||'[]')}catch(error){customOpenItems=[]}
     const openGrid=document.getElementById('open-grid');
-    const openItemHtml=(id,text)=>`<label class="open-item" data-custom-id="${id}"><input type="checkbox"><span><b>${escapeHtml(text)}</b></span></label>`;
-    function wireOpenItem(label){const box=label.querySelector('input'),key='wedding-open-custom-check-'+label.dataset.customId;box.checked=localStorage.getItem(key)==='true';box.addEventListener('change',()=>localStorage.setItem(key,box.checked))}
-    customOpenItems.forEach(item=>{openGrid.insertAdjacentHTML('beforeend',openItemHtml(item.id,item.text));wireOpenItem(openGrid.lastElementChild)});
-    document.getElementById('add-open-item').addEventListener('click',()=>{const text=prompt('New to-do:','');if(!text||!text.trim())return;const item={id:`custom-${Date.now()}`,text:text.trim()};customOpenItems.push(item);localStorage.setItem(customOpenKey,JSON.stringify(customOpenItems));openGrid.insertAdjacentHTML('beforeend',openItemHtml(item.id,item.text));const label=openGrid.lastElementChild;wireOpenItem(label);label.scrollIntoView({behavior:'smooth',block:'center'})});
+    const openItemHtml=(id,text,by)=>`<label class="open-item" data-custom-id="${id}"><input type="checkbox"><span><b>${escapeHtml(text)}</b>${by?`<small>added by ${escapeHtml(by)} · <a href="#" class="remove-todo">remove</a></small>`:''}</span></label>`;
+    function wireOpenItem(label){const box=label.querySelector('input'),id=label.dataset.customId,key='wedding-open-custom-check-'+id;if(db){box.addEventListener('change',()=>todoDoc(id).set({done:box.checked,updated:Date.now()},{merge:true}).catch(()=>{box.checked=!box.checked}));const rm=label.querySelector('.remove-todo');if(rm)rm.addEventListener('click',e=>{e.preventDefault();if(confirm('Remove this to-do for both of you?'))todoDoc(id).delete()})}else{box.checked=localStorage.getItem(key)==='true';box.addEventListener('change',()=>localStorage.setItem(key,box.checked))}}
+    if(!db)customOpenItems.forEach(item=>{openGrid.insertAdjacentHTML('beforeend',openItemHtml(item.id,item.text));wireOpenItem(openGrid.lastElementChild)});
+    document.getElementById('add-open-item').addEventListener('click',()=>{const text=prompt('New to-do:','');if(!text||!text.trim())return;const item={id:`custom-${Date.now()}`,text:text.trim()};if(db){todoDoc(item.id).set({text:item.text,done:false,by:whoAmI(),created:Date.now(),updated:Date.now()}).catch(error=>alert('Could not save: '+error.message));return}customOpenItems.push(item);localStorage.setItem(customOpenKey,JSON.stringify(customOpenItems));openGrid.insertAdjacentHTML('beforeend',openItemHtml(item.id,item.text));const label=openGrid.lastElementChild;wireOpenItem(label);label.scrollIntoView({behavior:'smooth',block:'center'})});
+    if(db){let migrated=false;db.collection('todos').onSnapshot(snap=>{const items={};snap.docs.forEach(d=>{items[d.id]=d.data()||{}});
+        builtinBoxes.forEach((box,i)=>{box.checked=!!(items['builtin-'+i]&&items['builtin-'+i].done)});
+        openGrid.querySelectorAll('[data-custom-id]').forEach(el=>el.remove());
+        Object.entries(items).filter(([id])=>!id.startsWith('builtin-')).sort((a,b)=>(a[1].created||0)-(b[1].created||0)).forEach(([id,item])=>{openGrid.insertAdjacentHTML('beforeend',openItemHtml(id,item.text||'',item.by||'?'));const label=openGrid.lastElementChild;label.querySelector('input').checked=!!item.done;wireOpenItem(label)});
+        // one-time: carry this browser's old local items into the shared list
+        if(!migrated){migrated=true;customOpenItems.forEach(item=>{if(!items[item.id])todoDoc(item.id).set({text:item.text,done:localStorage.getItem('wedding-open-custom-check-'+item.id)==='true',by:whoAmI(),created:Date.now(),updated:Date.now()})});if(customOpenItems.length)localStorage.removeItem(customOpenKey)}
+      },error=>console.error('Shared list unavailable',error));
+      const notice=document.querySelector('#open-grid ~ .notice');if(notice)notice.innerHTML='<strong>Shared list:</strong> checks and new to-dos save for both of you and update live on every phone.'}
     const budgetRowHtml=(vendor,index)=>{const safeVendor=escapeHtml(vendor);return `<tr data-budget-row data-index="${index}"><td>${safeVendor}</td><td><label class="money">$<input class="paid" type="number" min="0" step="0.01" inputmode="decimal"></label></td><td><select class="paid-by" aria-label="Who paid ${safeVendor}">${payerOptions}</select></td><td><label class="money">$<input class="due" type="number" min="0" step="0.01" inputmode="decimal"></label></td><td><select class="due-by" aria-label="Who will pay remaining ${safeVendor}">${payerOptions}</select></td><td class="row-total">$0</td><td><input class="budget-note" aria-label="${safeVendor} notes"></td></tr>`};
     const budgetBody=document.getElementById('budget-rows');
     budgetBody.innerHTML=vendors.map((vendor,i)=>budgetRowHtml(vendor,i)).join('')+customVendors.map(item=>budgetRowHtml(item.name,item.id)).join('');
